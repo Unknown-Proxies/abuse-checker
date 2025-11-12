@@ -131,20 +131,57 @@ async function main() {
         process.exit(1);
     }
     
-    console.log(`Found ${validIPs.length} valid IP address(es). Checking...\n`);
+    console.log(`Found ${validIPs.length} valid IP address(es). Checking...`);
     
     // CSV Header
     const csvHeader = 'IP Address,Is Public,IP Version,Is Whitelisted,Abuse Confidence Score,Country Code,Country Name,Usage Type,ISP,Domain,Hostnames,Is Tor,Total Reports,Distinct Users,Last Reported At';
-    console.log(csvHeader);
+    const csvFile = path.join(__dirname, 'checkedIPs.csv');
+    
+    // Check if file exists and has content
+    let fileExists = false;
+    let hasHeader = false;
+    try {
+        if (fs.existsSync(csvFile)) {
+            const existingContent = fs.readFileSync(csvFile, 'utf-8').trim();
+            if (existingContent.length > 0) {
+                fileExists = true;
+                // Check if header exists (first line matches our header)
+                const firstLine = existingContent.split('\n')[0];
+                hasHeader = firstLine === csvHeader;
+            }
+        }
+    } catch (error) {
+        console.error(`Error reading existing CSV file:`, error.message);
+        process.exit(1);
+    }
+    
+    // Collect CSV rows
+    const csvRows = [];
+    
+    // Add header only if file doesn't exist or doesn't have header
+    if (!fileExists || !hasHeader) {
+        csvRows.push(csvHeader);
+    }
     
     // Check each IP
     for (const ip of validIPs) {
+        console.log(`Checking ${ip}...`);
         const result = await checkIP(ip, apiKey);
         const csvRow = formatAsCSV(result);
-        console.log(csvRow);
+        csvRows.push(csvRow);
         
         // Add a small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    // Append CSV to file
+    try {
+        const contentToAppend = csvRows.join('\n') + '\n';
+        fs.appendFileSync(csvFile, contentToAppend, 'utf-8');
+        console.log(`\nResults appended to ${csvFile}`);
+    } catch (error) {
+        console.error(`Error writing CSV file:`, error.message);
+        process.exit(1);
     }
 }
 
