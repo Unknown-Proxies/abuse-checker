@@ -23,6 +23,71 @@ function readIPsFromFile(filePath) {
     }
 }
 
+// Parse CSV and extract IP addresses from the first column
+function getExistingIPsFromCSV(csvFilePath) {
+    const existingIPs = new Set();
+    
+    try {
+        if (!fs.existsSync(csvFilePath)) {
+            return existingIPs;
+        }
+        
+        const content = fs.readFileSync(csvFilePath, 'utf-8').trim();
+        if (content.length === 0) {
+            return existingIPs;
+        }
+        
+        const lines = content.split('\n');
+        // Skip header row (first line)
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (line.length === 0) continue;
+            
+            // Parse CSV line - handle quoted values
+            // Simple CSV parser: split by comma but respect quoted fields
+            const fields = [];
+            let currentField = '';
+            let inQuotes = false;
+            
+            for (let j = 0; j < line.length; j++) {
+                const char = line[j];
+                
+                if (char === '"') {
+                    if (inQuotes && line[j + 1] === '"') {
+                        // Escaped quote
+                        currentField += '"';
+                        j++; // Skip next quote
+                    } else {
+                        // Toggle quote state
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    // End of field
+                    fields.push(currentField);
+                    currentField = '';
+                } else {
+                    currentField += char;
+                }
+            }
+            fields.push(currentField); // Add last field
+            
+            // First column is IP Address
+            if (fields.length > 0) {
+                const ip = fields[0].trim();
+                // Only add if it's a valid IP format (not "ERROR" or empty)
+                if (ip && ip !== 'ERROR' && isValidIP(ip)) {
+                    existingIPs.add(ip);
+                }
+            }
+        }
+    } catch (error) {
+        console.error(`Error reading CSV file ${csvFilePath}:`, error.message);
+        // Don't exit, just return empty set - we'll still try to process IPs
+    }
+    
+    return existingIPs;
+}
+
 // Check IP with AbuseIPDB API
 async function checkIP(ipAddress, apiKey) {
     const url = 'https://api.abuseipdb.com/api/v2/check';
@@ -137,6 +202,12 @@ async function main() {
     const csvHeader = 'IP Address,Is Public,IP Version,Is Whitelisted,Abuse Confidence Score,Country Code,Country Name,Usage Type,ISP,Domain,Hostnames,Is Tor,Total Reports,Distinct Users,Last Reported At';
     const csvFile = path.join(__dirname, 'checkedIPs.csv');
     
+    // Get existing IPs from CSV to avoid duplicate API calls
+    const existingIPs = getExistingIPsFromCSV(csvFile);
+    if (existingIPs.size > 0) {
+        console.log(`Found ${existingIPs.size} IP(s) already in CSV. Skipping duplicates...`);
+    }
+    
     // Check if file exists and has content
     let fileExists = false;
     let hasHeader = false;
@@ -155,6 +226,21 @@ async function main() {
         process.exit(1);
     }
     
+    // Filter out IPs that already exist in CSV
+    const ipsToCheck = validIPs.filter(ip => !existingIPs.has(ip));
+    const skippedIPs = validIPs.filter(ip => existingIPs.has(ip));
+    
+    if (skippedIPs.length > 0) {
+        console.log(`Skipping ${skippedIPs.length} IP(s) already in CSV: ${skippedIPs.join(', ')}`);
+    }
+    
+    if (ipsToCheck.length === 0) {
+        console.log('All IPs have already been checked. No new API calls needed.');
+        return;
+    }
+    
+    console.log(`Checking ${ipsToCheck.length} new IP(s)...`);
+    
     // Collect CSV rows
     const csvRows = [];
     
@@ -164,7 +250,7 @@ async function main() {
     }
     
     // Check each IP
-    for (const ip of validIPs) {
+    for (const ip of ipsToCheck) {
         console.log(`Checking ${ip}...`);
         const result = await checkIP(ip, apiKey);
         const csvRow = formatAsCSV(result);
