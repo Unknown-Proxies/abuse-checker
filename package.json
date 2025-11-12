@@ -1,0 +1,17 @@
+{
+  "name": "abuse-checker",
+  "version": "1.0.0",
+  "description": "IP Abuse Checker using AbuseIPDB API",
+  "main": "check.js",
+  "scripts": {
+    "start": "node check.js"
+  },
+  "keywords": ["abuse", "ip", "checker", "abuseipdb"],
+  "author": "Unknown-Proxies",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.2"
+  }
+}
+
